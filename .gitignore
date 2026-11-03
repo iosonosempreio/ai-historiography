@@ -1,3 +1,9 @@
+# github_repo_metadata.py: virtual environment, downloaded data and run log
+venv/
+output/
+batch_run.log
+__pycache__/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
