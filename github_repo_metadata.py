@@ -866,6 +866,7 @@ class Dataset:
     state_path: Path       # checkpoint
     outputs: List[Path]    # final CSV files, present only once the fetch is complete
     date: str              # collection date used in the file names
+    uses_page_size: bool = True  # False when the page size is fixed (REST star history)
 
 
 @dataclass
@@ -989,7 +990,7 @@ def remove_checkpoint(ds: Dataset) -> None:
 
 
 def show_progress(ds: Dataset, state: Dict[str, Any], final: bool = False) -> None:
-    """Update the progress line: items fetched / total."""
+    """Update the progress line: items fetched / total, and the current page size."""
     done, total = state["items_fetched"], state.get("total")
     if done == 0 and not final and not CONSOLE.interactive:
         return  # nothing worth a line in a log file yet
@@ -998,6 +999,8 @@ def show_progress(ds: Dataset, state: Dict[str, Any], final: bool = False) -> No
         text += f"/{total:,} {ds.unit} ({min(done * 100 // total, 100)}%)"
     else:
         text += f" {ds.unit}"
+    if ds.uses_page_size and not final:
+        text += f" - page size {state.get('page_size', PAGE_SIZES[0])}"
     if final:
         text += " - saved"
     CONSOLE.progress(text, final=final)
@@ -1100,6 +1103,7 @@ def fetch_stars(client: GitHubClient, ctx: RunContext, repo: str) -> str:
 
     daily = make_dataset(ctx, repo, "stars", label="stars (daily)", unit="days",
                          columns=STAR_DAYS_COLUMNS, tail="", partial_tail="", output_tails=("",))
+    daily.uses_page_size = False  # REST endpoint with a fixed page of 30 weeks
 
     def star_days_page(cursor: Optional[str], page_size: PageSize, state: Dict[str, Any]) -> Page:
         known, extra = state["extra"], {}
