@@ -377,7 +377,7 @@ Pull requests only: the combined state (`StatusState`) of all checks and statuse
 - *Primary limit:* 5,000 GraphQL points per hour, shared by the whole batch. Most pages cost 1 to 5 points. When fewer than 50 points are left, the script prints the time it will wake up, sleeps until the quota resets (plus 5 seconds), then continues by itself.
 - *Secondary limits:* GitHub also limits bursts (roughly 2,000 points per minute), concurrent requests (hence one request at a time), and the work a single query may cause (at most 500,000 nodes per query and about 10 seconds of execution). If GitHub signals a secondary limit, the script waits as long as GitHub asks (the `Retry-After` header), or otherwise 60 s, then 120 s, 240 s… up to 15 minutes between attempts.
 - *Heavy queries:* if a page is too heavy (a timeout, "502/504", or a node or resource limit), the script automatically asks for smaller pages: 100, then 50, 25 and 10 items. Pull requests are the heaviest and often run at 50 per page.
-- *Connection problems* (timeouts, dropped connections, 502/503/504 errors): each request is retried up to 6 times, waiting 2, 4, 8, 16 and 32 seconds in between. If it still fails, the script logs `FAILED: owner/repo kind - reason`, keeps the progress saved for that repository and kind, and moves on to the next one.
+- *Connection problems* (timeouts, dropped connections, 502/503/504 errors): each request is retried up to 10 times, waiting 2, 4, 8… up to 120 seconds in between, and the page size is lowered step by step down to a single item. If it still fails, the script logs `FAILED: owner/repo kind - reason`, keeps the progress saved for that repository and kind, and moves on to the next one.
 - *Errors that cannot be fixed by retrying* (bad token, repository not found, private or deleted): the script logs `FAILED: owner/repo - reason` and moves on to the next repository. A single problem never stops the whole batch.
 
 **Checkpointing.** A final CSV file is never written directly:
@@ -423,7 +423,7 @@ A small repository takes under a minute. The largest repository of that batch (1
 | `GitHub timed out (HTTP 502); retrying ...` or `Query too large for GitHub; retrying with page size 50` | Normal for large repositories: the script retries with smaller pages. |
 | The run is very slow | Large repositories have tens of thousands of items, and the hourly quota limits the speed (see [How it works](#h-how-it-works)). Let it run. On macOS use `caffeinate -i`. |
 | The run was interrupted (Ctrl+C, closed terminal, sleep, power cut) and there are `.partial` files | Run the same command again: it resumes from the last saved page. |
-| `FAILED: owner/repo kind - ... gave up after 6 attempts` | A temporary network or GitHub problem. Rerun the same command later: it resumes that repository and kind. |
+| `FAILED: owner/repo kind - ... gave up after 10 attempts` | A temporary network or GitHub problem. Rerun the same command later: it resumes that repository and kind. |
 | You want to throw away saved progress (stale `.partial` / `.state.json` files) | Delete the `output/.state` folder and the `.partial` files, or run with `--force`. |
 | `Resuming an unfinished batch started on ...` but you wanted fresh data | A previous batch did not finish, so its collection date is reused. Run with `--force` to start a new collection dated today. |
 | `cannot write ...csv: is it open in another program?` (Windows) | Close the CSV file in Excel and rerun the command. |

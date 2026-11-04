@@ -54,12 +54,14 @@ REST_URL = "https://api.github.com"
 REST_API_VERSION = "2026-03-10"   # first REST API version documenting /stargazers/history
 USER_AGENT = "github-repo-metadata-script"
 
-PAGE_SIZES = (100, 50, 25, 10)    # items per GraphQL page, lowered step by step when GitHub struggles
+PAGE_SIZES = (100, 50, 25, 10, 5, 2, 1)  # items per GraphQL page, lowered step by step when GitHub struggles
+GROW_AFTER_PAGES = 50             # raise the page size one step after this many pages in a row without trouble
 STAR_HISTORY_PAGE_SIZE = 30       # weeks per page: the maximum the star history endpoint allows
 STAR_HISTORY_MAX_PAGE = 100       # the endpoint serves at most 100 pages (about 57 years)
 
 REQUEST_TIMEOUT_S = 60            # give up on a single request after this many seconds
-MAX_ATTEMPTS = 6                  # transient errors: 6 attempts, waiting 2, 4, 8, 16, 32 s in between
+MAX_ATTEMPTS = 10                 # transient errors: 10 attempts, waiting 2, 4, 8 ... up to 120 s in between
+RETRY_WAIT_MAX_S = 120            # longest wait between two attempts after a transient error
 SECONDARY_WAIT_S = 60             # secondary rate limit without Retry-After: wait 60, 120, 240 s ...
 SECONDARY_WAIT_MAX_S = 15 * 60    # ... but never more than 15 minutes at a time
 MAX_SECONDARY_WAITS = 8           # stop a repo/kind after this many secondary-limit waits in a row
@@ -556,7 +558,7 @@ def daily_frame(counts: pd.Series, start: str, end: str) -> pd.DataFrame:
 
 
 class PageSize:
-    """Page size of one fetch. Starts at 100 and steps down to 50, 25, 10 when
+    """Page size of one fetch. Starts at 100 and steps down to 50, 25, 10, 5, 2, 1 when
     GitHub times out or reports a node or secondary rate limit."""
 
     def __init__(self, value: Optional[int] = None) -> None:
@@ -567,6 +569,13 @@ class PageSize:
         if not smaller:
             return False
         self.value = smaller[0]
+        return True
+
+    def grow(self) -> bool:
+        larger = [size for size in PAGE_SIZES if size > self.value]
+        if not larger:
+            return False
+        self.value = larger[-1]
         return True
 
 
@@ -759,12 +768,12 @@ class GitHubClient:
 
     def _transient(self, retry: RetryState, reason: str, page_size: Optional[PageSize],
                    shrink: bool = False) -> None:
-        """Wait before retrying a transient failure (2, 4, 8, 16, 32 s), lowering
+        """Wait before retrying a transient failure (2, 4, 8 ... up to 120 s), lowering
         the page size if the query was too slow; give up after MAX_ATTEMPTS."""
         retry.attempts += 1
         if retry.attempts >= MAX_ATTEMPTS:
             raise FetchError(f"{reason}; gave up after {MAX_ATTEMPTS} attempts")
-        wait = 2 ** retry.attempts
+        wait = min(2 ** retry.attempts, RETRY_WAIT_MAX_S)
         note = ""
         if shrink and page_size is not None and page_size.reduce():
             note = f", page size lowered to {page_size.value}"
@@ -1013,8 +1022,10 @@ def run_dataset(ctx: RunContext, ds: Dataset, fetch_page: PageFetcher,
                   f"({state['items_fetched']:,} {ds.unit} already saved, collection date {ds.date})")
     page_size = PageSize(state.get("page_size"))
     restarted = False
+    calm_pages = 0  # pages in a row fetched without lowering the page size
     show_progress(ds, state)
     while not state["complete"]:
+        size_before = page_size.value
         try:
             page = fetch_page(state["cursor"], page_size, state)
         except RepoError as exc:
@@ -1027,7 +1038,13 @@ def run_dataset(ctx: RunContext, ds: Dataset, fetch_page: PageFetcher,
             log_event(f"  {ds.repo} {ds.label}: GitHub rejected the saved cursor; "
                       f"restarting this fetch from the beginning")
             state, page_size, restarted = new_checkpoint(ds), PageSize(), True
+            calm_pages = 0
             continue
+        # A slow stretch can make the page size drop to 1; once GitHub copes
+        # again, climb back up so the rest of the fetch is not needlessly slow.
+        calm_pages = 0 if page_size.value < size_before else calm_pages + 1
+        if calm_pages >= GROW_AFTER_PAGES and page_size.grow():
+            calm_pages = 0
         with critical_section():  # rows and state are saved together
             state["partial_bytes"] = write_csv(ds.partial, ds.columns, page.rows)
             state["items_fetched"] += len(page.rows)
