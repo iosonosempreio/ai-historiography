@@ -270,7 +270,9 @@ One row per repository of the batch: a snapshot at collection time.
 | `forks_amount` | integer | Forks | `31000` |
 | `watchers_amount` | integer | Accounts watching the repository (notifications), not stars | `1100` |
 | `open_issues_amount` | integer | Open issues (pull requests not included) | `1900` |
+| `issues_amount` | integer | All issues, open and closed (pull requests not included) | `9800` |
 | `open_prs_amount` | integer | Open pull requests | `950` |
+| `prs_amount` | integer | All pull requests, whether open, closed or merged | `14500` |
 | `disk_usage_kb` | integer | Repository size on GitHub in kilobytes | `512340` |
 | `is_fork` | boolean | `true` if the repository is a fork | `false` |
 | `parent_repo` | text | The repository it was forked from; empty if not a fork | `` |

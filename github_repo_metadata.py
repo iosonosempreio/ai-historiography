@@ -108,8 +108,8 @@ PRS_COLUMNS = [
 SUMMARY_COLUMNS = [
     "repo", "owner_type", "created_at", "pushed_at", "description", "primary_language",
     "languages", "license", "topics", "stars_amount", "forks_amount", "watchers_amount",
-    "open_issues_amount", "open_prs_amount", "disk_usage_kb", "is_fork", "parent_repo",
-    "is_archived", "default_branch",
+    "open_issues_amount", "issues_amount", "open_prs_amount", "prs_amount", "disk_usage_kb",
+    "is_fork", "parent_repo", "is_archived", "default_branch",
 ]
 
 # ---------------------------------------------------------------------------
@@ -302,7 +302,9 @@ query($owner: String!, $name: String!) {
     repositoryTopics(first: 100) { nodes { topic { name } } }
     watchers { totalCount }
     openIssues: issues(states: OPEN) { totalCount }
+    allIssues: issues { totalCount }
     openPullRequests: pullRequests(states: OPEN) { totalCount }
+    allPullRequests: pullRequests { totalCount }
     parent { nameWithOwner }
     defaultBranchRef { name }
   }
@@ -1474,7 +1476,9 @@ def fetch_repo_summary(client: GitHubClient, repo: str) -> Dict[str, Any]:
         "forks_amount": node.get("forkCount"),
         "watchers_amount": (node.get("watchers") or {}).get("totalCount"),
         "open_issues_amount": (node.get("openIssues") or {}).get("totalCount"),
+        "issues_amount": (node.get("allIssues") or {}).get("totalCount"),
         "open_prs_amount": (node.get("openPullRequests") or {}).get("totalCount"),
+        "prs_amount": (node.get("allPullRequests") or {}).get("totalCount"),
         "disk_usage_kb": node.get("diskUsage"),
         "is_fork": node.get("isFork"),
         "parent_repo": (node.get("parent") or {}).get("nameWithOwner", ""),
@@ -1492,6 +1496,15 @@ def summary_repos(path: Path) -> Set[str]:
         return set()
 
 
+def summary_has_current_columns(path: Path) -> bool:
+    """True if an existing summary file has exactly the columns written today."""
+    try:
+        with path.open(newline="", encoding="utf-8") as handle:
+            return next(csv.reader(handle), None) == SUMMARY_COLUMNS
+    except (OSError, csv.Error):
+        return False
+
+
 def write_summary(client: GitHubClient, ctx: RunContext, repos: List[str]) -> None:
     """repos_summary_[date].csv: one row per repository of the batch.
 
@@ -1502,6 +1515,9 @@ def write_summary(client: GitHubClient, ctx: RunContext, repos: List[str]) -> No
     final = ctx.out_dir / f"repos_summary_{ctx.date}.csv"
     forced = ("summary" in ctx.batch.get("force_kinds", []) and final.exists()
               and final.stat().st_mtime < float(ctx.batch.get("started_ts", 0)) - 2)
+    if final.exists() and not forced and not summary_has_current_columns(final):
+        log_event(f"Summary: {final.name} has an older column layout; rebuilding it")
+        forced = True
     present = summary_repos(final) if final.exists() and not forced else set()
     # Repositories already reported as FAILED (not found...) are left out.
     todo = [repo for repo in repos if repo.lower() not in present and repo not in ctx.fatal_repos]

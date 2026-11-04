@@ -75,15 +75,36 @@ What this means for the data:
 - Every file keeps the label `2026-11-02`, but the real end of each dataset differs by repository, from 2 Nov to 4 Nov.
 - **Open decision:** for analysis, cut every dataset at the same date (for example keep only items dated up to and including 2026-11-02), so all repositories cover the same window. The extra rows are not wrong, they are just from a later moment.
 
-## End of the collection
+## Day 3, later (4 November): finishing the collection
 
-A colleague managed to download the last repository's data overnight, so the separate run was stopped at about 43k of 127k PRs. Nothing is running now.
+**The colleague's download was not complete either.** A colleague had also downloaded the last repository overnight, and the first plan was to merge their files. Looking inside showed that their data was dated 2026-11-03 and that their PR file was still an unfinished `.partial` file, stopped at about 42.8k PRs. It had stalled at the same spot as ours. Our own unfinished file was further along (45,678 PRs) and both start from the oldest PR, so there was nothing to merge. Their files were not used.
 
-### Still to do
+**Resuming our own download with the fixed script.**
 
-1. Copy the colleague's files into `output/`, keeping the script's naming pattern `<owner>-<repo>_<kind>_history_<date>.csv`. Use the `2026-11-02` date if possible, otherwise a later full run would treat them as missing and refetch.
-2. Run `python github_repo_metadata.py --only summary` to add the last repository to the summary file.
-3. Delete the separate working folder once the colleague's data is verified.
+- The run continued from the saved checkpoint at 45,678 PRs. In the heavy stretch the log showed the page size dropping on every 502 and growing back afterwards (it went down to 5 and up to 50), and the download still moved forward steadily.
+- A later restart continued from 110,293 PRs and finished in 1 h 35 min with no failures: **127,520 PRs**, all with unique IDs, from 2025-11-26 to 2026-11-04.
+- A small change was made along the way: the progress line now shows the current page size (for example `pull requests: 60,743/127,367 PRs (47%) - page size 10`), except for daily stars, which use a fixed page.
+
+**Merging into the main collection.**
+
+1. The five files of the last repository (stars, commits, complete commit history, issues, PRs) were moved into the main output folder with `mv -n`, which keeps the names and never overwrites an existing file.
+2. The summary step (`--only summary`) was run on the whole list. It filled in the missing rows in under a minute and removed the batch checkpoint itself, so the run closed cleanly.
+
+**Final check.** Of the 60 repositories in the list, **58 are complete**: all five files exist, there are no leftover `.partial` files, and each has a row in `repos_summary_2026-11-02.csv`.
+
+**Two repositories could not be collected:** `asafelobotomy/ClosedClaw` and `mcotdev/femtoclaw`. GitHub returns a 404 for both (deleted, private or renamed, with no redirect). They failed the same way in the very first batch run on 2 Nov, so there never was data for them. They stay in the list, as part of the record of what was sampled.
+
+**Totals added to the summary.** The summary only had the number of *open* issues and PRs, so two columns were added: `issues_amount` (all issues, open and closed, pull requests not included) and `prs_amount` (all pull requests, whether open, closed or merged). They cost nothing extra, since they ride along in the same single request per repository. The README documents them.
+
+- A safety check was added to the script: if an existing summary file has a different set of columns, it is rebuilt instead of being extended. Appending new rows to the old layout would have produced a broken CSV.
+- The summary was regenerated on 4 Nov (about a minute, 61 GraphQL points) and kept the `2026-11-02` label. Again 58 rows, with the same two repositories reported as not found.
+- For the biggest repository it now shows **62,844 issues** and **127,531 PRs** in total, with 4,861 issues and 2,881 PRs still open. These are live numbers from 4 Nov, so they are slightly higher than the row counts in the downloaded files (see the side note on growth). The open counts can also go down, as items get closed.
+
+### Still to do (done by hand)
+
+1. Delete the separate working folder and the colleague's copy of the data. Both are now redundant.
+2. Pick the cutoff date for analysis (see the side note above: items up to and including 2026-11-02).
+3. Decide whether the two missing repositories stay in `repos.txt`. If they stay, a future full run will report them as `FAILED` again; that is expected.
 
 ## Lessons learned
 
@@ -91,3 +112,6 @@ A colleague managed to download the last repository's data overnight, so the sep
 - Timeouts on very large repositories are normal. A resumable checkpoint, smaller pages and patient retries are what make the download finish.
 - A fetch that only shrinks its page size gets slower forever. It needs to grow back.
 - Check GitHub's status page and test single items before suspecting a specific record.
+- Before relying on someone else's download, open the folder: a `.partial` file or a different date in the name means it is unfinished or from another collection.
+- Check the whole collection at the end (every repository has every file and a summary row) instead of trusting that no error appeared.
+- Very large repositories keep growing during a long download, so choose one cutoff date for the analysis.
