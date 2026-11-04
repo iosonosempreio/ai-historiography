@@ -50,6 +50,31 @@ Retrying the same command kept failing, now with the page size already at its mi
 
 After restarting with the fix, the run passed the problem spot immediately, and the page size climbed from 1 to 2 within minutes. The fix worked as intended.
 
+## Side note: the data keeps growing while we collect it
+
+The biggest repository is so active that its totals moved during the download itself. That is why the progress line's total (`.../127,053 PRs`) kept creeping up between restarts.
+
+| What | Value at the start of its download (3 Nov) | During or after (3 to 4 Nov) | Live check (4 Nov, 11:22 UTC) |
+|---|---|---|---|
+| Issues | 62,641 | 62,677 when the issue download finished a few hours later | 62,803 |
+| Pull requests | 126,861 | 127,053 (3 Nov, evening), then 127,322 (4 Nov, morning) | 127,370 |
+| Commits (default branch) | n/a | 124,658 when the commit download finished (3 Nov, afternoon) | 125,215 |
+| Open issues | n/a | 4,870 (our summary), 4,875 (the colleague's summary, a day later) | 4,881 |
+| Open PRs | n/a | 2,864 (our summary), 2,895 (the colleague's summary, a day later) | 2,910 |
+
+Rough growth rates:
+
+- **Pull requests:** about +509 in roughly 18 hours since the PR download started, so **about 27 new PRs per hour, around 650 per day**.
+- **Issues:** about +162 in roughly 22 hours, so around 7 per hour. Issues and PRs share one numbering sequence on GitHub, so the two numbers are not independent.
+- **Commits:** about +557 in a day.
+
+What this means for the data:
+
+- Downloads go from the oldest item to the newest, so new items land at the end. A long download therefore includes items created after the nominal collection date. In files labelled `2026-11-02`, the newest item is already dated **2026-11-03** for the second-to-last repository (PRs, issues and commits) and for the last one (issues, commits). Repositories that finished early on 3 Nov, such as the one that took 17 minutes, end on 2026-11-02.
+- The last repository's PR file will go on growing until its download ends, so it will reach 4 Nov or later.
+- Every file keeps the label `2026-11-02`, but the real end of each dataset differs by repository, from 2 Nov to 4 Nov.
+- **Open decision:** for analysis, cut every dataset at the same date (for example keep only items dated up to and including 2026-11-02), so all repositories cover the same window. The extra rows are not wrong, they are just from a later moment.
+
 ## End of the collection
 
 A colleague managed to download the last repository's data overnight, so the separate run was stopped at about 43k of 127k PRs. Nothing is running now.
